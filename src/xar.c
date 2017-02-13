@@ -187,52 +187,62 @@ static int archive(const char *filename, int arglen, char *args[]) {
 	flags = FTS_PHYSICAL|FTS_NOSTAT|FTS_NOCHDIR;
 	if( Local )
 		flags |= FTS_XDEV;
-	fts = fts_open(args, flags, NULL);
+/*	fts = fts_open(args, flags, NULL);
 	if( !fts ) {
 		fprintf(stderr, "Error traversing file tree\n");
 		exit(1);
 	}
+*/
+	ssize_t read = 0;
+	size_t len = 0;
+	char * line = NULL;
+	FILE *list_file = fopen("file_list.txt", "r");
+	if (!list_file) {
+		fprintf(stderr, "Error opening file_list.txt");
+		exit(1);
+	}
 
-	while( (ent = fts_read(fts)) ) {
+	while( (read = getline(&line, &len, list_file)) != -1 ) {
+		if (read > 0)
+			line[read - 1] = '\0'; // remove '\n'
+		printf("add file %s\n", line);
 		xar_file_t f;
 		int exclude_match = 1;
 		int nocompress_match = 1;
-		if( ent->fts_info == FTS_DP )
-			continue;
 
-		if( strcmp(ent->fts_path, "/") == 0 )
+		if( strcmp(line, "/") == 0 )
 			continue;
-		if( strcmp(ent->fts_path, ".") == 0 )
+		if( strcmp(line, ".") == 0 )
 			continue;
 		
 		for( i = Exclude; i; i=i->next ) {
-			exclude_match = regexec(&i->reg, ent->fts_path, 0, NULL, 0);
+			exclude_match = regexec(&i->reg, line, 0, NULL, 0);
 			if( !exclude_match )
 				break;
 		}
 		if( !exclude_match ) {
 			if( Verbose )
-				printf("Excluding %s\n", ent->fts_path);
+				printf("Excluding %s\n", line);
 			continue;
 		}
 
 		for( i = NoCompress; i; i=i->next ) {
-			nocompress_match = regexec(&i->reg, ent->fts_path, 0, NULL, 0);
+			nocompress_match = regexec(&i->reg, line, 0, NULL, 0);
 			if( !nocompress_match ) {
 				xar_opt_set(x, XAR_OPT_COMPRESSION, XAR_OPT_VAL_NONE);
 				break;
 			}
 		}
-		f = xar_add(x, ent->fts_path);
+		f = xar_add(x, line);
 		if( !f ) {
-			fprintf(stderr, "Error adding file %s\n", ent->fts_path);
+			fprintf(stderr, "Error adding file %s\n", line);
 		} else {
 			print_file(f);
 		}
 		if( !nocompress_match )
 			xar_opt_set(x, XAR_OPT_COMPRESSION, default_compression);
 	}
-	fts_close(fts);
+	fclose(list_file);
 	if( xar_close(x) != 0 ) {
 		fprintf(stderr, "Error creating the archive\n");
 		if( !Err )
